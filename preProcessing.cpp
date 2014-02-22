@@ -12,7 +12,7 @@
 #include "svm.h"
 
 void naiveBeise(list_t *passengerList,list_t *testPassengerList);
-void bayesianNetwork(list_t *passengerList,list_t *testPassengerList);
+void ML_bayesianNetwork(list_t *passengerList,list_t *testPassengerList);
 
 int famiryNo=1;
 
@@ -237,7 +237,7 @@ void fillAge(list_t *passengerList,list_t *testPassengerList){
 	struct svm_problem prob,prob2;		// set by read_problem
 	struct svm_model *model;
 	struct svm_node *x_space;
-	int max_index=4;
+	int max_index=5;
 	int i;
 	cell_t *cur;
 	passenger *human;
@@ -286,8 +286,8 @@ void fillAge(list_t *passengerList,list_t *testPassengerList){
 		x_space[2].value=(double)human->fare;
 		x_space[3].index=4;
 		x_space[3].value=(double)human->prop1;
-		/*x_space[4].index=5;
-		x_space[4].value=getNameNo(human->name->honorific);*/
+		x_space[4].index=5;
+		x_space[4].value=getNameNo(human->name->honorific);
 		
 		x_space[max_index].index = -1;
 		prob.x[i]=x_space;
@@ -307,9 +307,9 @@ void fillAge(list_t *passengerList,list_t *testPassengerList){
 		x_space[2].value=(double)human->fare;
 		x_space[3].index=4;
 		x_space[3].value=(double)human->prop1;
-		/*x_space[4].index=5;
+		x_space[4].index=5;
 		x_space[4].value=getNameNo(human->name->honorific);
-		x_space[5].index=6;
+		/*x_space[5].index=6;
 		x_space[5].value=(human->survived==-1) ? 1.0:0.0;*/
 		x_space[max_index].index = -1;
 		prob2.x[i]=x_space;
@@ -378,20 +378,21 @@ int main(void){
 	char buf[1024];
 	char **token;
 
-	dfopen(fp,"train.csv","r",exit(EXIT_FAILURE));
+	dfopen(fp,"data/train.csv","r",exit(EXIT_FAILURE));
 	fgets(buf,sizeof(buf),fp);
 
 	while(fgets(buf,sizeof(buf),fp)){		
 		int n=explode(&token,buf,',');
 		passenger *human=Calloc(passenger,1);
 		human->passengerId=atoi(token[0]);
-		human->survived=(atoi(token[1])==0) ? -1 : 1;
+		human->survived=atoi(token[1]);
 		human->sex=(strcmp("male",token[4])==0) ? 0 : 1;
 		human->age=(*token[5]=='\0') ? -1 : atoi(token[5]);
 		human->rank=atoi(token[2]);
 		human->fare=atoi(token[9]);
 		human->name=parseName(token[3]);
 		human->ticketNo=strdup(token[8]);
+		human->cabin=strdup(token[10]);
 		addList(&passengerList,human);
 		for(i=0;i<n;i++){
 			free(token[i]);
@@ -403,7 +404,7 @@ int main(void){
 	sameTicketScale(&passengerList);
 	
 
-	dfopen(fp,"test.csv","r",exit(EXIT_FAILURE));
+	dfopen(fp,"data/test.csv","r",exit(EXIT_FAILURE));
 	fgets(buf,sizeof(buf),fp);
 	while(fgets(buf,sizeof(buf),fp)){
 		explode(&token,strdup(buf),',');
@@ -415,6 +416,7 @@ int main(void){
 		human->fare=atoi(token[8]);
 		human->name=parseName(token[2]);
 		human->ticketNo=strdup(token[7]);
+		human->cabin=strdup(token[9]);
 		addList(&testPassengerList,human);
 	}
 	fclose(fp);
@@ -424,7 +426,7 @@ int main(void){
 
 	fillAge(&passengerList,&testPassengerList);
 
-	bayesianNetwork(&passengerList,&testPassengerList);
+	ML_bayesianNetwork(&passengerList,&testPassengerList);
 	exit(0);
 
 #define MAX_INDEX 5

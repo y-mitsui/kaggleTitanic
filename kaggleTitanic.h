@@ -21,7 +21,10 @@ typedef struct {
 	char* cabin;
 	int famiryNo;
 	char *ticketNo;
+	char *proof;
 	int prop1;
+	int extention;
+	int extention2;
 	friendInfo ufriend;
 }passenger;
 
