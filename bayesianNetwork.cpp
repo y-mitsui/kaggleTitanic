@@ -10,6 +10,7 @@
 #include "laa.h"
 
 double bic(double logLike,int numSample,int numModel);
+void setVariable(int *pattern,passenger *human);
 
 typedef struct _baysianNode{
 	const char *name;
@@ -87,26 +88,26 @@ double likelihood(int numNode,int *edge,double **likelies){
 	int i,j,sum;
 	unsigned char parentPattern;
 
-	for(like=0.0,i=0;i<numNode;i++){
+	for(sum=0,like=0.0,i=0;i<numNode;i++){
 		for(parentPattern=0,j=0;j<numNode;j++){
-			if(edge[i*numNode+j]==1) parentPattern=parentPattern|(1<<j);
+			if(edge[i*numNode+j]==1){
+				parentPattern=parentPattern|(1<<j);
+				sum++; // 親の総数
+			}
 		}
 		like+=likelies[i][parentPattern];
 	}
 	
-	/* 親の総数*/
-	for(sum=0,i=0;i<numNode;i++){
-		for(j=0;j<numNode;j++){
-			if(edge[i*numNode+j]==1) sum++;
-		}
-	}
+	
 	return -2*like+sum;
 }
 int isExistChildrenChain(int *edge,int numNode,int child,int key){
 	int i;
 	if(edge[key*numNode+child]==1) return 0;
-	for(i=0;i<numNode;i++){
-		if(edge[i*numNode+child]==1){
+	register int *pEdge=edge+child;
+	for(i=0;i<numNode;i++,pEdge+=numNode){
+		if(*pEdge==1){
+		//if(edge[i*numNode+child]==1){
 			if(isExistChildrenChain(edge,numNode,i,key)==0) return 0;
 		}
 	}
@@ -151,6 +152,7 @@ int __buildBayesianNet(baysianNode *node,int numNode,int *edge,int numLine,bayes
 		for(i=start;i<numNode*numNode;i++){
 			if(isEnableArc(edge,numNode,i)){
 				edge[i]=1;
+				//pattern[i%numNode]|=1<<(i/numNode);
 				numLikely+=__buildBayesianNet(node,numNode,edge,numLine,&likely[numLikely],likelies,i+1,rank+1);
 				edge[i]=0;
 			}
@@ -293,11 +295,7 @@ bayesianNetwork* bayesianNetworkTrain(list_t *passengerList,bayesianNetworkOptio
 	for(cur=passengerList->first;cur;cur=cur->next){
 		passenger *human=(passenger *)cur->data;
 		pattern[0]=human->survived;
-		pattern[1]=human->sex;
-		pattern[2]=human->rank-1;
-		pattern[3]=human->age;
-		pattern[4]=human->prop1;
-		pattern[5]=human->extention;
+		setVariable(&pattern[1],human);
 
 		int* cur=(int*)getLAA(frequency,pattern);
 		if(cur==NULL){
@@ -368,29 +366,6 @@ bayesianNetwork* bayesianNetworkTrain(list_t *passengerList,bayesianNetworkOptio
 	model->CPT=CPT;
 	return model;
 }
-void *bayesianNetworkPredict(bayesianNetwork *model,bayesianNetworkOption *opt,passenger *human,double *likeli){
-	int *pattern;
-
-	pattern=Malloc(int,opt->numVariable);
-	pattern[0]=human->sex;
-	pattern[1]=human->rank-1;
-	pattern[2]=human->age;
-	pattern[3]=human->prop1;
-	pattern[4]=human->fare;
-	pattern[5]=human->extention;
-	double *prop=(double*)getLAA(model->CPT[0][2|4|8|16],pattern);
-	if(prop==NULL){
-		//fprintf(stderr,"prop is NULL\n");
-		return int2Number(0);
-		//exit(1);
-	}
-	if(likeli){
-		*likeli+=log(prop[human->survived]);
-	}
-	int serv=(prop[0] >= prop[1]) ? 0 : 1;
-	free(pattern);
-	return int2Number(serv);
-}
 void freeBayesianNetwork(bayesianNetwork *model,bayesianNetworkOption *opt){
 	int i;
 	for(i=0;i<model->numModels;i++){
@@ -410,8 +385,10 @@ double clossValidation(list_t *data,void* arg, void* (*train)(list_t *,void*),vo
 	void *val;
 	int hit;
 	cell_t *cur;
+	int num,i;
 
-	for(hit=0,cur=data->first;cur;cur=cur->next){
+	num=(data->size < 1) ? data->size : 1;
+	for(i=0,hit=0,cur=data->first;cur && i<num;cur=cur->next,i++){
 		removeList(data,cur);
 		model=train(data,arg);
 		val=predict(model,arg,cur->data,NULL);
@@ -420,7 +397,7 @@ double clossValidation(list_t *data,void* arg, void* (*train)(list_t *,void*),vo
 		revivalList(data,cur);
 		free(val);
 	}
-	return (double)hit/data->size;
+	return (double)hit/(double)num;
 }
 
 inline double mutualInformationMeasure(double *probabilityTarget,double *probabilityPredictor,double *jointProbability,int numA,int numB,int *base){
@@ -504,7 +481,67 @@ void setBase(int *targets,int *sourcies,int numPassengers,int *base,int num,int 
 		}
 	}
 }
-#define NUM_VARIABLE 7
+void *bayesianNetworkPredict(bayesianNetwork *model,bayesianNetworkOption *opt,passenger *human,double *likeli){
+	int *pattern,i;
+	int *valuePattern,valuePatternCt=0;
+	unsigned char parentPattern=0;
+
+	pattern=Malloc(int,opt->numVariable);
+	valuePattern=Malloc(int,opt->numVariable);
+	setVariable(pattern,human);
+
+	//setEvidense(model->models);
+	/*for(i=0;i<opt->numVariable;i++){
+		if(model->models[0]->edge[i]==1){
+			parentPattern=parentPattern|(1<<i);
+			valuePattern[valuePatternCt++]=pattern[i];
+		}
+		else if(model->models[0]->edge[i*opt->numVariable]==1) prop=prop;
+	}
+	double *prop=(double*)getLAA(model->CPT[0][parentPattern],valuePattern);*/
+
+	
+	for(i=1;i<opt->numVariable;i++) parentPattern=parentPattern | (1<<i);
+	double *prop=(double*)getLAA(model->CPT[0][parentPattern],pattern);
+	if(prop==NULL){
+		fprintf(stderr,"prop is NULL\n");
+		return int2Number(0);
+		//exit(1);
+	}
+	if(likeli){
+		*likeli+=log(prop[human->survived]);
+	}
+	int serv=(prop[0] >= prop[1]) ? 0 : 1;
+	free(pattern);
+	return int2Number(serv);
+}
+
+void preProc(list_t *passengerList,int *ageBorderLine,int numAgeBorderLine){
+	int i;
+	cell_t *cur;
+	for(cur=passengerList->first;cur;cur=cur->next){
+		passenger *human=(passenger *)cur->data;
+		
+		for(i=0;i<numAgeBorderLine;i++) if(human->age < ageBorderLine[i]) break;
+		human->age=i;
+		human->extention=(strcmp(human->name->honorific,"Don")==0 || strcmp(human->name->honorific,"Dr")==0 || strcmp(human->name->honorific,"Major")==0
+			 || strcmp(human->name->honorific,"Jonkheer")==0 || strcmp(human->name->honorific,"Col")==0 || strcmp(human->name->honorific,"Capt")==0
+			 || strcmp(human->name->honorific,"Countess")==0 || strcmp(human->name->honorific,"Rev")==0) ? 0 : 1;
+		human->extention2=(*human->cabin==0) ? 2 : (human->cabin[strlen(human->cabin)-1]-'0')%2;
+		
+	}
+}
+void setVariable(int *pattern,passenger *human){
+	
+	pattern[0]=human->sex;
+	pattern[1]=human->rank-1;
+	pattern[2]=human->age;
+	pattern[3]=human->prop1;
+	//pattern[4]=human->extention;
+	pattern[4]=human->extention2;
+}
+
+#define NUM_VARIABLE 6
 
 void ML_bayesianNetwork(list_t *passengerList,list_t *testPassengerList){
 	baysianNode node[NUM_VARIABLE];
@@ -512,11 +549,10 @@ void ML_bayesianNetwork(list_t *passengerList,list_t *testPassengerList){
 	cell_t *cur;
 	int i;
 	
-	time_t t1=time(NULL);
 	
 //#define CALCLATION_SPLITS 1
 #ifdef CALCLATION_SPLITS
-	#define NUM_SPLITS 2
+	#define NUM_SPLITS 5
 	int maxBase[NUM_SPLITS];
 	int base[NUM_SPLITS];
 	int max,maxNum;
@@ -527,22 +563,24 @@ void ML_bayesianNetwork(list_t *passengerList,list_t *testPassengerList){
 	for(i=0,cur=passengerList->first;cur;cur=cur->next,i++){
 		passenger *human=(passenger *)cur->data;
 		targets[i]=human->survived;
-		sourcies[i]=human->fare;
-		if(max < human->fare) max=human->fare;
+		sourcies[i]=human->age;
+		if(max < human->age) max=human->age;
 	}
 	for(i=0;i<NUM_SPLITS;i++){
 		setBase(targets,sourcies,passengerList->size,base,i+1,max,maxBase,&maxScore,&maxNum,0,0);
 	}
-	printf("time:%d\n",time(NULL)-t1);
+	
 	printf("maxScore:%lf\n",maxScore);
 	for(i=0;i<maxNum;i++){
 		printf("%d ",maxBase[i]);
 	}
-	puts("");
+	puts("");exit(0);
 #else
 	#define NUM_SPLITS 5
 	int maxBase[NUM_SPLITS]={12,24,38,52,66};
-	int maxNum=5;
+	//int maxBase[NUM_SPLITS]={12,24,52,66};
+	//int maxBase[NUM_SPLITS]={10,20,30,40,50,60};
+	int maxNum=NUM_SPLITS;
 #endif
 	
 	
@@ -557,63 +595,58 @@ void ML_bayesianNetwork(list_t *passengerList,list_t *testPassengerList){
 	node[3].numVariablePattern=maxNum+1;
 	node[4].name="FRIEND";
 	node[4].numVariablePattern=3;
-	node[5].name="PROOF";
-	node[5].numVariablePattern=2;
+	/*node[5].name="PROOF";
+	node[5].numVariablePattern=2;*/
 	node[5].name="POSITION";
-	node[5].numVariablePattern=2;
+	node[5].numVariablePattern=3;
 
 	opt.numVariable=NUM_VARIABLE;
 	opt.node=node;
+	
+	preProc(passengerList,maxBase,maxNum);
 
+#define CLASS_VALIDATION 1
 #ifdef CLASS_VALIDATION
 	double cv=clossValidation(passengerList,&opt,(void* (*)(list_t*, void*))bayesianNetworkTrain,
 				(void* (*)(void*,void*,void*,double*))bayesianNetworkPredict,(int (*)(void*, void*))bayesianNetworkIsEqual,(void (*)(void*, void*))freeBayesianNetwork);
 	printf("CV:%lf\n",cv);
 #endif
-#define TEST 1
+//#define TEST 1
 #ifdef TEST
-	for(i=0,cur=passengerList->first;cur;cur=cur->next,i++){
-		passenger *human=(passenger *)cur->data;
-		for(i=0;i<maxNum;i++) if(human->age < maxBase[i]) break;
-		human->age=i;
-		human->extention=(strcmp(human->name->honorific,"Don")==0 || strcmp(human->name->honorific,"Dr")==0 || strcmp(human->name->honorific,"Major")==0
-			 || strcmp(human->name->honorific,"Jonkheer")==0 || strcmp(human->name->honorific,"Col")==0 || strcmp(human->name->honorific,"Capt")==0
-			 || strcmp(human->name->honorific,"Countess")==0 || strcmp(human->name->honorific,"Rev")==0) ? 0 : 1;
-		human->extention2=(human->cabin[strlen(human->cabin)-1]-'0')%2;
-	}
+	
 	bayesianNetwork *model=bayesianNetworkTrain(passengerList,&opt);
+	for(i=0;i<10;i++){
+		printf("SCORE:%lf\n",model->models[i]->score);
+		printfBayesianNetwork(node,NUM_VARIABLE,model->models[i]->edge);
+	}
 	double likeli=0.0;
+	int hit=0;
 	for(cur=passengerList->first;cur;cur=cur->next){
 		passenger* human=(passenger*)cur->data;
 		
-		(int*)bayesianNetworkPredict(model,&opt,(passenger*)cur->data,&likeli);
+		int *val=(int*)bayesianNetworkPredict(model,&opt,(passenger*)human,&likeli);
+		if(*val==human->survived) hit++;
+		//printf("val:%d\n",*val);
 	}
-	printf("BIC:%lf\n",bic(likeli,passengerList->size,NUM_VARIABLE));
+	printf("BIC:%lf  Accuary:%lf\n",bic(likeli,passengerList->size,NUM_VARIABLE-1),(double)hit/(double)passengerList->size);
 	freeBayesianNetwork(model,&opt);
 #endif 
-
+//#define MAIN_PREDICTION 1
 #ifdef MAIN_PREDICTION
-	for(i=0,cur=testPassengerList->first;cur;cur=cur->next,i++){
-		passenger *human=(passenger *)cur->data;
-		for(i=0;i<maxNum;i++) if(human->age < maxBase[i]) break;
-		human->age=i;
-		
-		human->extension=(strcmp(human->proof,"Don")==0 || strcmp(human->proof,"Dr")==0 || strcmp(human->proof,"Major")==0
-			 || strcmp(human->proof,"Jonkheer")==0 || strcmp(human->proof,"Col")==0 || strcmp(human->proof,"Capt")==0
-			 || strcmp(human->proof,"Countess")==0 || strcmp(human->proof,"Rev")==0) ? 0 : 1;
-		human->extension2=(human->cabin[strlen(human->cabin)-1]-'0')%2;
-	}
-	bayesianNetwork *model=bayesianNetworkTrain(passengerList,&opt);
+	preProc(testPassengerList,maxBase,maxNum);
+	
+	bayesianNetwork *modelMain=bayesianNetworkTrain(passengerList,&opt);
 	puts("PassengerId,Survived");
 	for(cur=testPassengerList->first;cur;cur=cur->next){
 		passenger* human=(passenger*)cur->data;
-		int *val=(int*)bayesianNetworkPredict(model,&opt,(passenger*)cur->data,NULL);
+		int *val=(int*)bayesianNetworkPredict(modelMain,&opt,(passenger*)human,NULL);
 		printf("%d,%d\n",human->passengerId,*val);
 	}
-	freeBayesianNetwork(model,&opt);
+	freeBayesianNetwork(modelMain,&opt);
+#else
+	for(i=0;i<3;i++)
+		printf("times[%d]:%lf\n",i,(double)times[i] / (double)CLOCKS_PER_SEC);
 #endif
-	/*for(i=0;i<3;i++)
-		printf("times[%d]:%lf\n",i,(double)times[i] / (double)CLOCKS_PER_SEC);*/
 
 
 }
