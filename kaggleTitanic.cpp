@@ -43,7 +43,7 @@ LOOP_OUT:
 	names[namesNum++]=strdup(tmp);
 	result->first=names[2];
 	result->honorific=names[1];
-	result->second=names[1];
+	result->second=names[0];
 	return result;
 }
 
@@ -72,36 +72,6 @@ double sameTicketScale(list_t *passengerList){
 		if(flag && flag==dead) source->prop1=2;	//‘Sˆõ•‚©‚Á‚½ê‡
 		else if(flag && dead==0) source->prop1=0;	//‘SˆõŽ€‚ñ‚¾ê‡
 		else source->prop1=1;
-	}
-	
-	return (double)deadMe/(double)mother;
-}
-double sameFamiryScale(list_t *passengerList){
-	int dead,deadMe=0,mother=0;
-	cell_t *cur,*cur2;
-	int flag;
-
-	for(cur=passengerList->first;cur;cur=cur->next){
-		passenger *source=(passenger *)cur->data;
-		dead=0;
-		flag=0;
-		for(cur2=passengerList->first;cur2;cur2=cur2->next){
-			passenger *target=(passenger *)cur2->data;
-			
-			if(target->passengerId!=source->passengerId
-			&& target->famiryNo==source->famiryNo){
-				flag++;
-				if(target->survived==-1){
-					dead++;
-				}
-			}
-		}
-		if(flag) mother++;
-		if(flag && flag==dead){			
-			if(source->survived==-1){
-				deadMe++;
-			}
-		}
 	}
 	
 	return (double)deadMe/(double)mother;
@@ -145,7 +115,6 @@ double cv(struct svm_parameter *param,struct svm_problem *prob){
 	struct svm_model *model;
 	int i,j;
 	double predict_label,target_label;
-	double sum,mean;
 	prob2.l=prob->l;
 	prob2.y = Malloc(double,prob->l);
 	prob2.x = Malloc(struct svm_node *,prob->l);
@@ -154,11 +123,7 @@ double cv(struct svm_parameter *param,struct svm_problem *prob){
 
 	prob2.l--;
 
-	for(sum=0.0,i=0;i<prob->l;i++){
-		sum+=prob->y[i];
-	}
-	mean=sum/prob->l;
-	printf("mean:%lf\n",mean);
+
 	for(i=0;i<prob->l;i++){
 		for(j=0;j<i;j++){
 			prob2.x[j]=prob->x[j];
@@ -170,7 +135,6 @@ double cv(struct svm_parameter *param,struct svm_problem *prob){
 		}
 		model = svm_train(&prob2,param);		
 		predict_label = svm_predict(model,prob->x[i]);
-		//predict_label=mean;
 		svm_free_and_destroy_model(&model);
 		
 		printf("predict_label:%lf prob->y[i]:%lf\n",predict_label,prob->y[i]);
@@ -187,6 +151,42 @@ double getNameNo(char *name){
 	if(!strcmp("Miss",name)) return 1.0;
 	if(!strcmp("Master",name)) return 0.0;
 	return 1.5;
+}
+void checkAlone(list_t *passengerList,list_t *testPassengerList){
+	cell_t *cur,*cur2;
+	passenger *human,*human2;
+	for(cur=passengerList->first;cur;cur=cur->next){
+		human=(passenger *)cur->data;
+		human->alone=1;
+		for(cur2=passengerList->first;cur2;cur2=cur2->next){
+			human2=(passenger *)cur2->data;
+			if(human!=human2 && strcmp(human->name->first,human2->name->first)==0){
+				human->alone=0;
+			}
+		}
+		for(cur2=testPassengerList->first;cur2;cur2=cur2->next){
+			human2=(passenger *)cur2->data;
+			if(strcmp(human->name->first,human2->name->first)==0){
+				human->alone=0;
+			}
+		}
+	}
+	for(cur=testPassengerList->first;cur;cur=cur->next){
+		human=(passenger *)cur->data;
+		human->alone=1;
+		for(cur2=passengerList->first;cur2;cur2=cur2->next){
+			human2=(passenger *)cur2->data;
+			if(strcmp(human->name->first,human2->name->first)==0){
+				human->alone=0;
+			}
+		}
+		for(cur2=testPassengerList->first;cur2;cur2=cur2->next){
+			human2=(passenger *)cur2->data;
+			if(human!=human2 && strcmp(human->name->first,human2->name->first)==0){
+				human->alone=0;
+			}
+		}
+	}
 }
 void fillAge(list_t *passengerList,list_t *testPassengerList){
 	list_t inAge,notAge;
@@ -298,32 +298,10 @@ void fillAge(list_t *passengerList,list_t *testPassengerList){
 }
 void print_null(const char *s) { s++; }
 int main(void){
-	struct svm_parameter param;		// set by parse_command_line
-	struct svm_problem prob,prob2;		// set by read_problem
-	struct svm_model *model;
-	struct svm_node *x_space;
-	double predict_label;
 	list_t passengerList,testPassengerList;
 	FILE *fp;
-	cell_t *cur;
-	int i,j,hit;
+	int i;
 
-	// default values
-	param.svm_type = C_SVC;
-	param.kernel_type = RBF;
-	param.degree = 3;
-	param.gamma = 0;	// 1/num_features
-	param.coef0 = 0;
-	param.nu = 0.5;
-	param.cache_size = 100;
-	param.C = 1;
-	param.eps = 1e-3;
-	param.p = 0.1;
-	param.shrinking = 1;
-	param.probability = 0;
-	param.nr_weight = 0;
-	param.weight_label = NULL;
-	param.weight = NULL;
 
 	svm_set_print_string_function(print_null);
 
@@ -381,7 +359,7 @@ int main(void){
 	sameTicketScale(&testPassengerList);
 
 	fillAge(&passengerList,&testPassengerList);
-
+	checkAlone(&passengerList,&testPassengerList);
 	ML_bayesianNetwork(&passengerList,&testPassengerList);
 	exit(0);
 	

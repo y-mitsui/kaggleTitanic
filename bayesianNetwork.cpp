@@ -9,6 +9,8 @@
 #include "list.h"
 #include "laa.h"
 
+#define NUM_LIKELIES 50
+
 double bic(double logLike,int numSample,int numModel);
 void setVariable(int *pattern,passenger *human);
 
@@ -73,20 +75,10 @@ void printSquereMatrix(int *matrix,int numMatrix){
 	puts("--------------");
 }
 
-int getNumParents(int *edge,int currentNode,int numNode){
-	int i,num=0;
-	for(i=0;i<numNode;i++){
-		if(edge[currentNode*numNode+i]==1){
-			num++;
-			num+=getNumParents(edge,i,numNode);
-		}
-	}
-	return num;
-}
 double likelihood(int numNode,int *edge,double **likelies){
 	double like;
 	int i,j,sum;
-	unsigned char parentPattern;
+	unsigned short parentPattern;
 
 	for(sum=0,like=0.0,i=0;i<numNode;i++){
 		for(parentPattern=0,j=0;j<numNode;j++){
@@ -129,31 +121,39 @@ int isEnableArc(int *edge,int numNode,int idx){
 	return tmp;	
 }
 
-int __buildBayesianNet(baysianNode *node,int numNode,int *edge,int numLine,bayesianNetScore **likely,double **likelies,int start,int rank){
+int __buildBayesianNet(int numNode,int *edge,int numLine,bayesianNetScore **likely,double **likelies,int limitLikely,int start,int rank){
 	int numLikely=0;
-	int i;
+	int i,j;
 	double tmp;
 	if(rank==numLine){
 
 		first_time=clock();
 
 		tmp=likelihood(numNode,edge,likelies);
-
+		
 		times[0]+=clock()-first_time;
 		first_time=clock();
 
-		likely[numLikely++]=makeBNScore(edge,numNode*numNode,tmp);
+		if(likely[limitLikely-1]->score > tmp){
+			for(i=limitLikely-1;i>0;i--){
+				if(likely[i]->score < tmp) break;
+			}
+			for(j=i+1;j<limitLikely;j++){
+				likely[j]=likely[j-1];
+			}
+			likely[i]=makeBNScore(edge,numNode*numNode,tmp);
+		}
 
 		times[1]+=clock()-first_time;
 		
 
-		return numLikely;
+		return 1;
 	}else{
 		for(i=start;i<numNode*numNode;i++){
 			if(isEnableArc(edge,numNode,i)){
+
 				edge[i]=1;
-				//pattern[i%numNode]|=1<<(i/numNode);
-				numLikely+=__buildBayesianNet(node,numNode,edge,numLine,&likely[numLikely],likelies,i+1,rank+1);
+				numLikely+=__buildBayesianNet(numNode,edge,numLine,likely,likelies,limitLikely,i+1,rank+1);
 				edge[i]=0;
 			}
 		}
@@ -171,12 +171,12 @@ int combination(int n,int m){
 	}
 	return (int)(sum/sum2);
 }
-unsigned long long getNumberOfBayesianNode(int limit){
+long long getNumberOfBayesianNode(int limit){
 	int i;
-	unsigned long long sum;
+	long long sum;
 	if(limit==0) return 1;
 	for(sum=0,i=1;i<=limit;i++){
-		unsigned long long nn=pow(-1,i+1)*combination(limit,i)*pow(2,i*(limit-i));
+		long long nn=pow(-1,i+1)*combination(limit,i)*pow(2,i*(limit-i));
 		if(limit-i > 1) nn*=getNumberOfBayesianNode(limit-i);
 		sum+=nn;
 	}
@@ -194,7 +194,7 @@ int sortCmp(const void *x,const void *y){
 	else if((*a)->score < (*b)->score) return -1;
 	return 0;
 }
-void localScore(baysianNode *node,int numNode,int currentNode,int numLine,Associate *cHist,unsigned char parentPattern,double *likelies,Associate **CPT,int rank,int start){
+void localScore(baysianNode *node,int numNode,int currentNode,int numLine,Associate *cHist,unsigned short parentPattern,double *likelies,Associate **CPT,int rank,int start){
 	int *pattern;
 	int *nums;
 	Associate *tmp;
@@ -207,7 +207,7 @@ void localScore(baysianNode *node,int numNode,int currentNode,int numLine,Associ
 		pattern=Calloc(int,numNode);
 		for(i=0;i<cHist->numKeys;i++){	
 			for(patternCt=0,j=0;j<numNode;j++){
-				if((parentPattern&((unsigned char)1<<j))!=0){
+				if((parentPattern&((unsigned short)1<<j))!=0){
 					pattern[patternCt++]=cHist->keys[i*cHist->patternSize+j];
 				}
 			}
@@ -255,7 +255,7 @@ void localScore(baysianNode *node,int numNode,int currentNode,int numLine,Associ
 		}
 	}
 }
-void __freeCPT(Associate **CPT,int numNode,int currentNode,unsigned char parentPattern,int numLine,int rank,int start){
+void __freeCPT(Associate **CPT,int numNode,int currentNode,unsigned short parentPattern,int numLine,int rank,int start){
 	int i;
 	if(numLine==rank){
 		for(i=0;i<CPT[parentPattern]->numKeys;i++){
@@ -285,7 +285,6 @@ bayesianNetwork* bayesianNetworkTrain(list_t *passengerList,bayesianNetworkOptio
 	int i,j,k;
 	int *pattern;
 	int *edge;
-	int numLikely;
 	cell_t *cur;
 	bayesianNetwork *model;
 
@@ -333,14 +332,32 @@ bayesianNetwork* bayesianNetworkTrain(list_t *passengerList,bayesianNetworkOptio
 		}
 	}
 
-	int  numCombinationPattern=getNumberOfBayesianNode(opt->numVariable);	//組み合わせ数を計算
-	bayesianNetScore **arr=Malloc(bayesianNetScore*,numCombinationPattern);
+	model=Malloc(bayesianNetwork,1);
+	model->CPT=CPT;
+	
+#ifdef BUILD_BAYESIAN_NET
+	long long numLikely=0;
+	long long  numCombinationPattern=getNumberOfBayesianNode(opt->numVariable);	//組み合わせ数を計算
 	edge=Calloc(int,opt->numVariable*opt->numVariable);
-	for(numLikely=0,i=0;i<=10;i++){
-		numLikely+=__buildBayesianNet(opt->node,opt->numVariable,edge,i,&arr[numLikely],likelies,0,0);	
+	bayesianNetScore **arr=Malloc(bayesianNetScore*,NUM_LIKELIES);
+	for(i=0;i<NUM_LIKELIES;i++){
+		arr[i]=makeBNScore(edge,opt->numVariable*opt->numVariable,99999999);
 	}
+	for(i=0;numCombinationPattern!=numLikely;i++){
+		numLikely+=__buildBayesianNet(opt->numVariable,edge,i,arr,likelies,NUM_LIKELIES,0,0);
+#ifndef MAIN_PREDICTION
+		printf("complite %015lld  / %lld \n",numLikely,numCombinationPattern);
+#endif
+	}
+	
+	model->models=arr;
+	model->numModels=NUM_LIKELIES;
 
 	free(edge);
+#else
+	model->numModels=0;
+#endif
+	
 	for(i=0;i<opt->numVariable;i++){
 		free(likelies[i]);
 		for(j=0;j<cHist[i]->numKeys;j++){
@@ -356,14 +373,7 @@ bayesianNetwork* bayesianNetworkTrain(list_t *passengerList,bayesianNetworkOptio
 	freeLAA(frequency);
 	free(frequency);
 	free(pattern);
-
-
-	qsort(arr,numLikely,sizeof(bayesianNetScore*),sortCmp);
-
-	model=Malloc(bayesianNetwork,1);
-	model->models=arr;
-	model->numModels=numLikely;
-	model->CPT=CPT;
+	
 	return model;
 }
 void freeBayesianNetwork(bayesianNetwork *model,bayesianNetworkOption *opt){
@@ -400,6 +410,7 @@ double clossValidation(list_t *data,void* arg, void* (*train)(list_t *,void*),vo
 	return (double)hit/(double)num;
 }
 
+//相互情報量をベースとした情報量基準を計算
 inline double mutualInformationMeasure(double *probabilityTarget,double *probabilityPredictor,double *jointProbability,int numA,int numB,int *base){
 	double sum=0.0;
 	int i,j;
@@ -483,30 +494,16 @@ void setBase(int *targets,int *sourcies,int numPassengers,int *base,int num,int 
 }
 void *bayesianNetworkPredict(bayesianNetwork *model,bayesianNetworkOption *opt,passenger *human,double *likeli){
 	int *pattern,i;
-	int *valuePattern,valuePatternCt=0;
-	unsigned char parentPattern=0;
+	unsigned short parentPattern=0;
 
 	pattern=Malloc(int,opt->numVariable);
-	valuePattern=Malloc(int,opt->numVariable);
 	setVariable(pattern,human);
 
-	//setEvidense(model->models);
-	/*for(i=0;i<opt->numVariable;i++){
-		if(model->models[0]->edge[i]==1){
-			parentPattern=parentPattern|(1<<i);
-			valuePattern[valuePatternCt++]=pattern[i];
-		}
-		else if(model->models[0]->edge[i*opt->numVariable]==1) prop=prop;
-	}
-	double *prop=(double*)getLAA(model->CPT[0][parentPattern],valuePattern);*/
-
-	
 	for(i=1;i<opt->numVariable;i++) parentPattern=parentPattern | (1<<i);
 	double *prop=(double*)getLAA(model->CPT[0][parentPattern],pattern);
 	if(prop==NULL){
 		fprintf(stderr,"prop is NULL\n");
 		return int2Number(0);
-		//exit(1);
 	}
 	if(likeli){
 		*likeli+=log(prop[human->survived]);
@@ -516,7 +513,7 @@ void *bayesianNetworkPredict(bayesianNetwork *model,bayesianNetworkOption *opt,p
 	return int2Number(serv);
 }
 
-void preProc(list_t *passengerList,int *ageBorderLine,int numAgeBorderLine){
+void preProccess(list_t *passengerList,int *ageBorderLine,int numAgeBorderLine){
 	int i;
 	cell_t *cur;
 	for(cur=passengerList->first;cur;cur=cur->next){
@@ -528,7 +525,7 @@ void preProc(list_t *passengerList,int *ageBorderLine,int numAgeBorderLine){
 			 || strcmp(human->name->honorific,"Jonkheer")==0 || strcmp(human->name->honorific,"Col")==0 || strcmp(human->name->honorific,"Capt")==0
 			 || strcmp(human->name->honorific,"Countess")==0 || strcmp(human->name->honorific,"Rev")==0) ? 0 : 1;
 		human->extention2=(*human->cabin==0) ? 2 : (human->cabin[strlen(human->cabin)-1]-'0')%2;
-		
+		//human->floor=(*human->cabin==0) ? 0 : 'G'-*human->cabin+1;
 	}
 }
 void setVariable(int *pattern,passenger *human){
@@ -537,11 +534,12 @@ void setVariable(int *pattern,passenger *human){
 	pattern[1]=human->rank-1;
 	pattern[2]=human->age;
 	pattern[3]=human->prop1;
-	//pattern[4]=human->extention;
 	pattern[4]=human->extention2;
+	pattern[5]=human->alone;
+	pattern[6]=human->floor;
 }
 
-#define NUM_VARIABLE 6
+#define NUM_VARIABLE 8
 
 void ML_bayesianNetwork(list_t *passengerList,list_t *testPassengerList){
 	baysianNode node[NUM_VARIABLE];
@@ -550,7 +548,7 @@ void ML_bayesianNetwork(list_t *passengerList,list_t *testPassengerList){
 	int i;
 	
 	
-//#define CALCLATION_SPLITS 1
+//量的変数の最適分割ラインを計算する
 #ifdef CALCLATION_SPLITS
 	#define NUM_SPLITS 5
 	int maxBase[NUM_SPLITS];
@@ -574,12 +572,11 @@ void ML_bayesianNetwork(list_t *passengerList,list_t *testPassengerList){
 	for(i=0;i<maxNum;i++){
 		printf("%d ",maxBase[i]);
 	}
-	puts("");exit(0);
+	puts("");
+	exit(0);
 #else
 	#define NUM_SPLITS 5
 	int maxBase[NUM_SPLITS]={12,24,38,52,66};
-	//int maxBase[NUM_SPLITS]={12,24,52,66};
-	//int maxBase[NUM_SPLITS]={10,20,30,40,50,60};
 	int maxNum=NUM_SPLITS;
 #endif
 	
@@ -595,27 +592,30 @@ void ML_bayesianNetwork(list_t *passengerList,list_t *testPassengerList){
 	node[3].numVariablePattern=maxNum+1;
 	node[4].name="FRIEND";
 	node[4].numVariablePattern=3;
-	/*node[5].name="PROOF";
-	node[5].numVariablePattern=2;*/
 	node[5].name="POSITION";
 	node[5].numVariablePattern=3;
+	node[6].name="ALONE";
+	node[6].numVariablePattern=2;
+	node[7].name="FOOR";
+	node[7].numVariablePattern=8;
 
 	opt.numVariable=NUM_VARIABLE;
 	opt.node=node;
 	
-	preProc(passengerList,maxBase,maxNum);
+	preProccess(passengerList,maxBase,maxNum);
 
-#define CLASS_VALIDATION 1
+//交差確認法でテストをする
 #ifdef CLASS_VALIDATION
 	double cv=clossValidation(passengerList,&opt,(void* (*)(list_t*, void*))bayesianNetworkTrain,
 				(void* (*)(void*,void*,void*,double*))bayesianNetworkPredict,(int (*)(void*, void*))bayesianNetworkIsEqual,(void (*)(void*, void*))freeBayesianNetwork);
 	printf("CV:%lf\n",cv);
 #endif
-//#define TEST 1
+
+//トレーニングデータを使ってテストをする
 #ifdef TEST
 	
 	bayesianNetwork *model=bayesianNetworkTrain(passengerList,&opt);
-	for(i=0;i<10;i++){
+	for(i=0;i<model->numModels;i++){
 		printf("SCORE:%lf\n",model->models[i]->score);
 		printfBayesianNetwork(node,NUM_VARIABLE,model->models[i]->edge);
 	}
@@ -626,14 +626,14 @@ void ML_bayesianNetwork(list_t *passengerList,list_t *testPassengerList){
 		
 		int *val=(int*)bayesianNetworkPredict(model,&opt,(passenger*)human,&likeli);
 		if(*val==human->survived) hit++;
-		//printf("val:%d\n",*val);
 	}
 	printf("BIC:%lf  Accuary:%lf\n",bic(likeli,passengerList->size,NUM_VARIABLE-1),(double)hit/(double)passengerList->size);
-	freeBayesianNetwork(model,&opt);
+	//freeBayesianNetwork(model,&opt);
 #endif 
-//#define MAIN_PREDICTION 1
+
+//本番予測
 #ifdef MAIN_PREDICTION
-	preProc(testPassengerList,maxBase,maxNum);
+	preProccess(testPassengerList,maxBase,maxNum);
 	
 	bayesianNetwork *modelMain=bayesianNetworkTrain(passengerList,&opt);
 	puts("PassengerId,Survived");

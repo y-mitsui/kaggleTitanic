@@ -25,6 +25,8 @@ typedef struct {
 	int prop1;
 	int extention;
 	int extention2;
+	int alone;
+	int floor;
 	friendInfo ufriend;
 }passenger;
 
@@ -74,3 +76,17 @@ typedef struct {
 		}					\
 }
 
+//交差確認法をする
+//#define CLASS_VALIDATION 1
+
+//トレーニングデータを使ってテストをする
+#define TEST 1
+
+//本番予測
+//#define MAIN_PREDICTION 1
+
+//量的変数の最適分割ラインを計算する
+//#define CALCLATION_SPLITS 1
+
+//ベイジアンネットの構造学習をする
+//#define BUILD_BAYESIAN_NET 1
