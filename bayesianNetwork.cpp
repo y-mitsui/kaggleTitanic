@@ -525,7 +525,7 @@ void preProccess(list_t *passengerList,int *ageBorderLine,int numAgeBorderLine){
 			 || strcmp(human->name->honorific,"Jonkheer")==0 || strcmp(human->name->honorific,"Col")==0 || strcmp(human->name->honorific,"Capt")==0
 			 || strcmp(human->name->honorific,"Countess")==0 || strcmp(human->name->honorific,"Rev")==0) ? 0 : 1;
 		human->extention2=(*human->cabin==0) ? 2 : (human->cabin[strlen(human->cabin)-1]-'0')%2;
-		//human->floor=(*human->cabin==0) ? 0 : 'G'-*human->cabin+1;
+		human->floor=(*human->cabin==0) ? 0 : 'G'-*human->cabin+1;
 	}
 }
 void setVariable(int *pattern,passenger *human){
