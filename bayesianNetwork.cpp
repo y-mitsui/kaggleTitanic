@@ -397,7 +397,7 @@ double clossValidation(list_t *data,void* arg, void* (*train)(list_t *,void*),vo
 	cell_t *cur;
 	int num,i;
 
-	num=(data->size < 1) ? data->size : 1;
+	num=(data->size < 100) ? data->size : 100;
 	for(i=0,hit=0,cur=data->first;cur && i<num;cur=cur->next,i++){
 		removeList(data,cur);
 		model=train(data,arg);
