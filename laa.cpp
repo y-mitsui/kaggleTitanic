@@ -5,6 +5,11 @@
 #include "kaggleTitanic.h"
 #include "laa.h"
 
+/*
+連想配列
+探索効率は線形
+*/
+
 Associate* makeLAA(int arraySize,int patternSize){
 	Associate *result=Calloc(Associate,1);
 	result->keys=Calloc(int,arraySize*patternSize);
