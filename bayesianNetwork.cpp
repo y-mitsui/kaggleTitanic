@@ -605,7 +605,7 @@ void ML_bayesianNetwork(list_t *passengerList,list_t *testPassengerList){
 	preProccess(passengerList,maxBase,maxNum);
 
 //交差確認法でテストをする
-#ifdef CLASS_VALIDATION
+#ifdef CLOSS_VALIDATION
 	double cv=clossValidation(passengerList,&opt,(void* (*)(list_t*, void*))bayesianNetworkTrain,
 				(void* (*)(void*,void*,void*,double*))bayesianNetworkPredict,(int (*)(void*, void*))bayesianNetworkIsEqual,(void (*)(void*, void*))freeBayesianNetwork);
 	printf("CV:%lf\n",cv);

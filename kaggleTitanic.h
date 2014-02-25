@@ -77,7 +77,7 @@ typedef struct {
 }
 
 //交差確認法をする
-//#define CLASS_VALIDATION 1
+//#define CLOSS_VALIDATION 1
 
 //トレーニングデータを使ってテストをする
 #define TEST 1
